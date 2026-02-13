@@ -15,13 +15,73 @@ export interface ParseResult {
   totalRows: number;
 }
 
-const REQUIRED_COLUMNS = ['Type', 'Started Date', 'Description', 'Amount', 'Currency'];
+// Canonical field name → known localized column headers
+const COLUMN_ALIASES: Record<string, string[]> = {
+  type: ['Type', 'Tipo', 'Art', 'Genre', 'Typ'],
+  product: ['Product', 'Producto', 'Produit', 'Produkt', 'Prodotto'],
+  startedDate: [
+    'Started Date', 'Fecha de inicio', 'Date de début',
+    'Startdatum', 'Data di inizio', 'Data de início',
+  ],
+  completedDate: [
+    'Completed Date', 'Fecha de finalización', 'Fecha de finalizacion',
+    'Date de fin', 'Abschlussdatum', 'Data di completamento', 'Data de conclusão',
+  ],
+  description: ['Description', 'Descripción', 'Descripcion', 'Beschreibung', 'Descrizione', 'Descrição'],
+  amount: ['Amount', 'Importe', 'Montant', 'Betrag', 'Importo', 'Valor'],
+  fee: ['Fee', 'Comisión', 'Comision', 'Frais', 'Gebühr', 'Gebuhr', 'Commissione', 'Taxa'],
+  currency: ['Currency', 'Divisa', 'Devise', 'Währung', 'Wahrung', 'Valuta', 'Moeda'],
+  state: ['State', 'Estado', 'État', 'Etat', 'Status', 'Stato'],
+  balance: ['Balance', 'Saldo', 'Solde', 'Kontostand', 'Saldo'],
+};
+
+// Required canonical fields
+const REQUIRED_FIELDS = ['type', 'startedDate', 'description', 'amount', 'currency'];
+
+/**
+ * Build a mapping from canonical field names to the actual CSV column header,
+ * using a case-insensitive + accent-normalized match.
+ */
+function buildColumnMap(headers: string[]): Record<string, string> | null {
+  const map: Record<string, string> = {};
+  const normalize = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+  const normalizedHeaders = headers.map(h => ({ original: h, norm: normalize(h) }));
+
+  for (const [canonical, aliases] of Object.entries(COLUMN_ALIASES)) {
+    for (const alias of aliases) {
+      const match = normalizedHeaders.find(h => h.norm === normalize(alias));
+      if (match) {
+        map[canonical] = match.original;
+        break;
+      }
+    }
+  }
+
+  // Check required fields
+  const missing = REQUIRED_FIELDS.filter(f => !map[f]);
+  if (missing.length > 0) return null;
+
+  return map;
+}
 
 function parseAmount(raw: string): number {
   if (!raw || raw.trim() === '') return 0;
-  const cleaned = raw.trim().replace(/,/g, '.');
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? 0 : num;
+  // Handle European format: "1.234,56" → "1234.56"
+  const trimmed = raw.trim();
+  // If there's both . and , → determine which is decimal separator
+  if (trimmed.includes(',') && trimmed.includes('.')) {
+    if (trimmed.lastIndexOf(',') > trimmed.lastIndexOf('.')) {
+      // 1.234,56 → European
+      return parseFloat(trimmed.replace(/\./g, '').replace(',', '.')) || 0;
+    }
+    // 1,234.56 → US
+    return parseFloat(trimmed.replace(/,/g, '')) || 0;
+  }
+  // Only comma → treat as decimal
+  const cleaned = trimmed.replace(/,/g, '.');
+  return parseFloat(cleaned) || 0;
 }
 
 function parseRevolutDate(raw: string): Date {
@@ -42,9 +102,21 @@ function parseRevolutDate(raw: string): Date {
   try {
     const parsed = parseDate(trimmed, 'dd/MM/yyyy HH:mm:ss', new Date());
     if (!isNaN(parsed.getTime())) return parsed;
+  } catch { /* try next */ }
+
+  // Try "dd/MM/yyyy" (no time)
+  try {
+    const parsed = parseDate(trimmed, 'dd/MM/yyyy', new Date());
+    if (!isNaN(parsed.getTime())) return parsed;
   } catch { /* fallback */ }
 
   return new Date();
+}
+
+function getField(row: RawRevolutRow, colMap: Record<string, string>, field: string): string {
+  const header = colMap[field];
+  if (!header) return '';
+  return (row[header] ?? '').trim();
 }
 
 export function getFingerprint(description: string, amount: number, startedDate: Date): string {
@@ -67,13 +139,24 @@ export async function parseRevolutCSV(
         const batchId = crypto.randomUUID();
         const now = new Date();
 
-        // Validate required columns
+        // Auto-detect columns
         const headers = results.meta.fields ?? [];
-        const missingCols = REQUIRED_COLUMNS.filter(c => !headers.includes(c));
-        if (missingCols.length > 0) {
+        const colMap = buildColumnMap(headers);
+
+        if (!colMap) {
+          const missing = REQUIRED_FIELDS.filter(f => {
+            const aliases = COLUMN_ALIASES[f] ?? [];
+            const normalize = (s: string) =>
+              s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+            const normalizedHeaders = headers.map(h => normalize(h));
+            return !aliases.some(a => normalizedHeaders.includes(normalize(a)));
+          });
           resolve({
             transactions: [],
-            errors: [{ row: 0, message: `Missing required columns: ${missingCols.join(', ')}` }],
+            errors: [{
+              row: 0,
+              message: `Could not match required columns: ${missing.join(', ')}.\n\nFound columns: ${headers.join(', ')}`,
+            }],
             duplicateCount: 0,
             totalRows: 0,
           });
@@ -84,9 +167,9 @@ export async function parseRevolutCSV(
           const row = results.data[i];
 
           try {
-            const amount = parseAmount(row.Amount);
-            const startedDate = parseRevolutDate(row['Started Date']);
-            const description = (row.Description ?? '').trim();
+            const amount = parseAmount(getField(row, colMap, 'amount'));
+            const startedDate = parseRevolutDate(getField(row, colMap, 'startedDate'));
+            const description = getField(row, colMap, 'description');
 
             if (!description && amount === 0) {
               continue; // Skip empty rows
@@ -100,22 +183,23 @@ export async function parseRevolutCSV(
             }
             existingFingerprints.add(fingerprint);
 
-            const completedDate = row['Completed Date']
-              ? parseRevolutDate(row['Completed Date'])
+            const completedDateRaw = getField(row, colMap, 'completedDate');
+            const completedDate = completedDateRaw
+              ? parseRevolutDate(completedDateRaw)
               : startedDate;
 
             const transaction: Transaction = {
               id: crypto.randomUUID(),
-              type: parseTransactionType(row.Type ?? ''),
-              product: (row.Product ?? '').trim(),
+              type: parseTransactionType(getField(row, colMap, 'type')),
+              product: getField(row, colMap, 'product'),
               startedDate,
               completedDate,
               description,
               amount,
-              fee: parseAmount(row.Fee),
-              currency: (row.Currency ?? 'EUR').trim().toUpperCase(),
-              state: parseTransactionState(row.State ?? 'COMPLETED'),
-              balance: parseAmount(row.Balance),
+              fee: parseAmount(getField(row, colMap, 'fee')),
+              currency: (getField(row, colMap, 'currency') || 'EUR').toUpperCase(),
+              state: parseTransactionState(getField(row, colMap, 'state') || 'COMPLETED'),
+              balance: parseAmount(getField(row, colMap, 'balance')),
               categoryId: null,
               importedAt: now,
               importBatchId: batchId,
