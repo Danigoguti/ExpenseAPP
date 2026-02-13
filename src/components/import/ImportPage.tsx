@@ -7,6 +7,7 @@ import { parseRevolutCSV, type ParseResult } from '../../services/csvParser';
 import { autoClassifyTransactions } from '../../services/categoryService';
 import { useTransactions } from '../../hooks/useTransactions';
 import type { Transaction } from '../../models/Transaction';
+import { AlertTriangle } from 'lucide-react';
 
 type ImportStep = 'select' | 'preview' | 'importing' | 'done';
 
@@ -17,14 +18,27 @@ export default function ImportPage() {
   const [autoClassifiedCount, setAutoClassifiedCount] = useState(0);
   const [importedCount, setImportedCount] = useState(0);
   const [isParsing, setIsParsing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const { addTransactions, getExistingFingerprints } = useTransactions();
 
   const handleFileSelect = async (file: File) => {
     setIsParsing(true);
+    setError(null);
     try {
       const fingerprints = await getExistingFingerprints();
       const result = await parseRevolutCSV(file, fingerprints);
+
+      // Check for parse-level errors with no transactions
+      if (result.transactions.length === 0 && result.errors.length > 0) {
+        setError(result.errors.map(e => e.message).join('\n'));
+        return;
+      }
+
+      if (result.transactions.length === 0 && result.totalRows === 0) {
+        setError('No transactions found in the file. Make sure this is a Revolut CSV export.');
+        return;
+      }
 
       // Auto-classify
       const classified = await autoClassifyTransactions(result.transactions);
@@ -34,6 +48,9 @@ export default function ImportPage() {
       setClassifiedTransactions(classified);
       setAutoClassifiedCount(autoCount);
       setStep('preview');
+    } catch (err) {
+      console.error('CSV import error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to parse CSV file. Please check the file format.');
     } finally {
       setIsParsing(false);
     }
@@ -58,6 +75,7 @@ export default function ImportPage() {
     setParseResult(null);
     setClassifiedTransactions([]);
     setAutoClassifiedCount(0);
+    setError(null);
   };
 
   const handleReset = () => {
@@ -84,6 +102,17 @@ export default function ImportPage() {
         {step === 'select' && (
           <div className="space-y-4">
             <FileDropZone onFileSelect={handleFileSelect} isLoading={isParsing} />
+
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex gap-3">
+                <AlertTriangle size={20} className="text-red-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-red-300">Import Error</p>
+                  <p className="text-xs text-red-400/80 mt-1 whitespace-pre-wrap">{error}</p>
+                </div>
+              </div>
+            )}
+
             <div className="bg-slate-800/50 rounded-xl p-4">
               <h3 className="text-sm font-medium text-slate-300 mb-2">How to export from Revolut:</h3>
               <ol className="text-xs text-slate-400 space-y-1.5 list-decimal list-inside">
