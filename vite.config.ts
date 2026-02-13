@@ -37,6 +37,7 @@ export default defineConfig({
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-charts': ['recharts'],
           'vendor-data': ['dexie', 'dexie-react-hooks', 'papaparse', 'date-fns'],
+          'vendor-pdf': ['pdfjs-dist'],
         },
       },
     },

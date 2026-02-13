@@ -50,7 +50,7 @@ export default function FileDropZone({ onFileSelect, isLoading }: FileDropZonePr
       <input
         ref={inputRef}
         type="file"
-        accept=".csv"
+        accept=".csv,.pdf"
         onChange={handleChange}
         className="hidden"
       />
@@ -65,9 +65,9 @@ export default function FileDropZone({ onFileSelect, isLoading }: FileDropZonePr
         <>
           <Upload size={48} className="text-slate-400" />
           <div className="text-center">
-            <p className="text-slate-200 font-medium">Upload Revolut CSV</p>
+            <p className="text-slate-200 font-medium">Upload Revolut Statement</p>
             <p className="text-sm text-slate-400 mt-1">
-              Tap to select or drag & drop your file
+              PDF or CSV — tap to select or drag & drop
             </p>
           </div>
         </>

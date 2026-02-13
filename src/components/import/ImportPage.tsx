@@ -5,6 +5,7 @@ import FileDropZone from './FileDropZone';
 import ImportPreview from './ImportPreview';
 import ImportProgress from './ImportProgress';
 import { parseRevolutCSV, type ParseResult } from '../../services/csvParser';
+import { parseRevolutPDF } from '../../services/pdfParser';
 import { autoClassifyTransactions } from '../../services/categoryService';
 import { useTransactions } from '../../hooks/useTransactions';
 import type { Transaction } from '../../models/Transaction';
@@ -29,7 +30,12 @@ export default function ImportPage() {
     setError(null);
     try {
       const fingerprints = await getExistingFingerprints();
-      const result = await parseRevolutCSV(file, fingerprints);
+
+      // Route to appropriate parser based on file type
+      const isPDF = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
+      const result = isPDF
+        ? await parseRevolutPDF(file, fingerprints)
+        : await parseRevolutCSV(file, fingerprints);
 
       // Check for parse-level errors with no transactions
       if (result.transactions.length === 0 && result.errors.length > 0) {
@@ -38,7 +44,7 @@ export default function ImportPage() {
       }
 
       if (result.transactions.length === 0 && result.totalRows === 0) {
-        setError('No transactions found in the file. Make sure this is a Revolut CSV export.');
+        setError('No transactions found in the file. Make sure this is a Revolut statement (CSV or PDF).');
         return;
       }
 
@@ -51,8 +57,8 @@ export default function ImportPage() {
       setAutoClassifiedCount(autoCount);
       setStep('preview');
     } catch (err) {
-      console.error('CSV import error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to parse CSV file. Please check the file format.');
+      console.error('Import error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to parse file. Please check the file format.');
     } finally {
       setIsParsing(false);
     }
@@ -95,7 +101,7 @@ export default function ImportPage() {
   return (
     <div>
       <Header
-        title="Import CSV"
+        title="Import"
         rightAction={
           step === 'done' ? (
             <button
@@ -128,7 +134,7 @@ export default function ImportPage() {
                 <li>Open Revolut app</li>
                 <li>Go to your account / transaction history</li>
                 <li>Tap the statement/export icon</li>
-                <li>Select date range and CSV format</li>
+                <li>Select date range and PDF or CSV format</li>
                 <li>Download and upload the file here</li>
               </ol>
             </div>
