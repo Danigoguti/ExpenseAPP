@@ -31,3 +31,27 @@ button, a, [role="button"] {
   -webkit-user-select: none;
   user-select: none;
 }
+
+/* Hide scrollbar for filter pill containers */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* PWA install prompt animation */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
