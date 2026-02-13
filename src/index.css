@@ -1,0 +1,33 @@
+@import 'tailwindcss';
+
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+}
+
+body {
+  margin: 0;
+  background-color: #0F172A;
+  color: #F1F5F9;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.scroll-container {
+  -webkit-overflow-scrolling: touch;
+  overflow-y: auto;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+button, a, [role="button"] {
+  -webkit-user-select: none;
+  user-select: none;
+}
