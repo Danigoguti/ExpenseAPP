@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Header from '../layout/Header';
 import FileDropZone from './FileDropZone';
 import ImportPreview from './ImportPreview';
@@ -20,6 +21,7 @@ export default function ImportPage() {
   const [isParsing, setIsParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const navigate = useNavigate();
   const { addTransactions, getExistingFingerprints } = useTransactions();
 
   const handleFileSelect = async (file: File) => {
@@ -82,6 +84,13 @@ export default function ImportPage() {
     handleCancel();
     setImportedCount(0);
   };
+
+  // Auto-navigate to transactions after successful import
+  useEffect(() => {
+    if (step !== 'done') return;
+    const timer = setTimeout(() => navigate('/transactions'), 1500);
+    return () => clearTimeout(timer);
+  }, [step, navigate]);
 
   return (
     <div>
